@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  --bg: #fdf9f5;
+  --bg: #ffffff;
   --text: #2e2a26;
   --accent: #7b3fa0;
   --muted: #8a8078;
@@ -22,7 +22,7 @@ main {
 }
 
 main.index-main {
-  max-width: 960px;
+  max-width: 1240px;
 }
 
 /* Заголовки/абзацы статьи специально с высокой специфичностью (.post ...) -
