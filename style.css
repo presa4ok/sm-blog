@@ -6,7 +6,10 @@
   --muted: #8a8078;
 }
 
-* { box-sizing: border-box; }
+/* box-sizing: border-box только для НАШЕГО контента внутри <main> - иначе
+   через каскад ломается расчёт размеров у мобильного меню Тильды в
+   хедере/футере (они рассчитаны на родной content-box). */
+main, main * { box-sizing: border-box; }
 
 body {
   background: var(--bg);
