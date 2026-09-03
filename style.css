@@ -2,37 +2,23 @@
   color-scheme: light;
   --bg: #fdf9f5;
   --text: #2e2a26;
-  --accent: #d97a4d;
+  --accent: #7b3fa0;
   --muted: #8a8078;
-  --card: #ffffff;
 }
 
 * { box-sizing: border-box; }
 
 body {
-  margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Mulish", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   line-height: 1.6;
-}
-
-.site-header, .site-footer {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 24px 20px;
-  font-weight: 600;
-}
-
-.site-header a, .site-footer a {
-  color: var(--text);
-  text-decoration: none;
 }
 
 main {
   max-width: 720px;
   margin: 0 auto;
-  padding: 0 20px 60px;
+  padding: 130px 20px 60px;
 }
 
 h1 { font-size: 1.8rem; line-height: 1.3; }
@@ -71,22 +57,34 @@ h3 { font-size: 1.1rem; }
 
 .faq h3 { margin-bottom: 4px; }
 
-.cta-box {
+.post-nav {
   margin-top: 40px;
-  padding: 24px;
-  background: var(--card);
-  border: 1px solid #eee;
-  border-radius: 12px;
-  text-align: center;
+  padding-top: 24px;
+  border-top: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.cta-button {
-  display: inline-block;
-  margin-top: 12px;
-  padding: 12px 24px;
-  background: var(--accent);
-  color: #fff;
-  border-radius: 8px;
+.post-nav-side {
+  flex: 1;
+  font-size: 0.9rem;
+}
+
+.post-nav-side:last-child {
+  text-align: right;
+}
+
+.post-nav a {
+  color: var(--text);
   text-decoration: none;
+}
+
+.post-nav-home {
+  flex: 0 0 auto;
   font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
 }
