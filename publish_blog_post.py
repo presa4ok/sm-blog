@@ -173,8 +173,12 @@ def rewrite_article(pool_item: dict) -> dict:
     return json.loads(text)
 
 
+def is_speech_author(name: str) -> bool:
+    return "Лучия" in name or "Розенталь" in name
+
+
 def author_role(name: str) -> str:
-    if "Лучия" in name or "Розенталь" in name:
+    if is_speech_author(name):
         return "логопед-дефектолог"
     return "психолог и основатель"
 
@@ -282,7 +286,7 @@ def render_post(article: dict, slug: str, prev: dict | None, next_: dict | None,
         h1=html.escape(article["h1"]),
         date_human=article.get("date", date.today().isoformat()),
         body_html=article["body_html"],
-        speech_cta_html=SPEECH_CTA_HTML if article.get("about_speech") else "",
+        speech_cta_html=SPEECH_CTA_HTML if (is_speech_author(author) or article.get("about_speech")) else "",
         faq_html=render_faq(article.get("faq", [])),
         signature=html.escape(signature),
         jsonld=jsonld,
