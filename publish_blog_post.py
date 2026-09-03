@@ -17,11 +17,11 @@ from datetime import date
 
 import requests
 
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+DEEPSEEK_API_KEY = os.environ["DEEPSEEK_API_KEY"]
 LAOZHANG_KEY = os.environ["LAOZHANG_API_KEY"]
 
-ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_MODEL = "claude-sonnet-5"
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_MODEL = "deepseek-chat"
 LAOZHANG_IMG_URL = "https://api.laozhang.ai/v1/images/generations"
 IMAGE_MODEL = "gemini-2.5-flash-image"
 IMAGE_SUFFIX = 'пастельные цвета, стиль иллюстрация, написано "Логоцентр Сами Мамы"'
@@ -136,21 +136,20 @@ def generate_article(topic: dict) -> dict:
         author=author, author_role=role,
     )
     r = requests.post(
-        ANTHROPIC_URL,
+        DEEPSEEK_URL,
         headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json",
         },
         json={
-            "model": ANTHROPIC_MODEL,
+            "model": DEEPSEEK_MODEL,
             "max_tokens": 4096,
             "messages": [{"role": "user", "content": prompt}],
         },
         timeout=180,
     )
     r.raise_for_status()
-    text = r.json()["content"][0]["text"].strip()
+    text = r.json()["choices"][0]["message"]["content"].strip()
     text = re.sub(r"^```(json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
     return json.loads(text)
 
