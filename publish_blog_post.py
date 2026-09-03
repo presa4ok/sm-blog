@@ -39,6 +39,8 @@ STATE_PATH = "blog_state.json"
 POSTS_DIR = "posts"
 POSTS_DATA_DIR = "posts_data"
 PARTIALS_DIR = "partials"
+PAGES_DIR = "page"
+PAGE_SIZE = 10
 
 BLOG_REWRITE_PROMPT = """\
 Вот статья, которая уже была опубликована в Telegram-канале @samimamiclub:
@@ -60,7 +62,8 @@ BLOG_REWRITE_PROMPT = """\
   "h1": "...",
   "body_html": "...",
   "faq": [{{"q": "...", "a": "..."}}, {{"q": "...", "a": "..."}}],
-  "author": "..."
+  "author": "...",
+  "about_speech": true/false
 }}
 
 ТРЕБОВАНИЯ:
@@ -72,17 +75,29 @@ BLOG_REWRITE_PROMPT = """\
 - body_html: ТОЛЬКО теги <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em> - никакого markdown.
   Структура: вводный абзац -> 3-5 секций с <h2>-подзаголовками (короче и чаще, а не один
   длинный блок) -> списки <ul><li> сразу после того подзаголовка, к которому относятся.
+  НЕ включай в body_html подпись автора и НЕ включай никакие блоки/ссылки на
+  samimami.ru/online или "артикуляционную гимнастику", даже если они были в оригинале -
+  это добавляется отдельно после текста, не нужно дублировать или пересказывать своими
+  словами.
 - Тон: обращение на "ты" к маме, тепло, экспертно, без снобизма, без осуждения - тот же
   голос, что в оригинале, но текст и примеры - другие, не пересказ.
 - ЗНАКИ ПРЕПИНАНИЯ: только короткое тире "-", никогда "—" или "–". Только прямые кавычки
   "текст", никогда «ёлочки» и не „лапки".
-- Заканчивается коротким тёплым абзацем + подписью автора: <p><em>Имя, должность
-  логопедического центра "Сами Мамы"</em></p> - БЕЗ призывов комментировать/сохранять/
-  подписаться и без какой-либо продающей ссылки/кнопки - это просто информационная статья.
 - faq: 2-3 вопроса-ответа по теме статьи (для расширенных сниппетов), ответ 1-2 предложения.
 - author: имя автора статьи, как в оригинале (например "Баркаева" или "Лучия Розенталь").
+- about_speech: true, если статья про развитие речи, звукопроизношение, логопедию,
+  запуск речи и т.п. (обычно это статьи за авторством Лучии Розенталь) - иначе false.
 - НЕ добавляй хэштеги.
 """
+
+SPEECH_CTA_HTML = (
+    '<aside class="speech-cta">'
+    '<p>Если ваш ребёнок ещё не говорит или говорит неуверенно, держите рабочую '
+    'артикуляционную гимнастику + календарь выполнения. Результаты улучшатся очень быстро.</p>'
+    '<a class="speech-cta-link" href="https://samimami.ru/online">'
+    'Артикуляционная гимнастика для красивой речи &rarr;</a>'
+    '</aside>'
+)
 
 
 def load_json(path, default):
@@ -158,6 +173,12 @@ def rewrite_article(pool_item: dict) -> dict:
     return json.loads(text)
 
 
+def author_role(name: str) -> str:
+    if "Лучия" in name or "Розенталь" in name:
+        return "логопед-дефектолог"
+    return "психолог и основатель"
+
+
 def mark_posted(slug: str, title: str) -> None:
     state = load_json(STATE_PATH, {"posts": []})
     state.setdefault("posts", []).append({
@@ -192,10 +213,16 @@ POST_TEMPLATE = """<!doctype html>
 <p class="post-date">{date_human}</p>
 <img class="post-image" src="{image_url_rel}" alt="{h1}">
 {body_html}
+{speech_cta_html}
 {faq_html}
+<p class="post-signature"><em>{signature}</em></p>
 <nav class="post-nav">
 <span class="post-nav-side">{prev_link}</span>
-<a class="post-nav-home" href="../index.html">На главную блога</a>
+<span class="post-nav-home">
+<a href="https://samimami.ru">На главную сайта</a>
+<span class="post-nav-sep">&middot;</span>
+<a href="../index.html">На главную блога</a>
+</span>
 <span class="post-nav-side">{next_link}</span>
 </nav>
 </main>
@@ -243,6 +270,8 @@ def render_post(article: dict, slug: str, prev: dict | None, next_: dict | None,
     next_link = (
         f'<a href="{next_["slug"]}.html">{html.escape(next_["title"])} &rarr;</a>' if next_ else ""
     )
+    author = article.get("author", "")
+    signature = f'{author}, {author_role(author)} логопедического центра "Сами Мамы"'
 
     return POST_TEMPLATE.format(
         meta_title=html.escape(article["meta_title"]),
@@ -253,7 +282,9 @@ def render_post(article: dict, slug: str, prev: dict | None, next_: dict | None,
         h1=html.escape(article["h1"]),
         date_human=article.get("date", date.today().isoformat()),
         body_html=article["body_html"],
+        speech_cta_html=SPEECH_CTA_HTML if article.get("about_speech") else "",
         faq_html=render_faq(article.get("faq", [])),
+        signature=html.escape(signature),
         jsonld=jsonld,
         head_assets=head_assets,
         header_html=header_html,
@@ -261,6 +292,28 @@ def render_post(article: dict, slug: str, prev: dict | None, next_: dict | None,
         prev_link=prev_link,
         next_link=next_link,
     )
+
+
+def page_url(page_num: int, from_root: bool) -> str:
+    """Ссылка на page_num, если текущая страница лежит в корне (from_root) или в page/."""
+    if page_num == 1:
+        return "index.html" if from_root else "../index.html"
+    return f"{PAGES_DIR}/{page_num}.html" if from_root else f"{page_num}.html"
+
+
+def render_pagination(page_num: int, total_pages: int) -> str:
+    if total_pages <= 1:
+        return ""
+    from_root = page_num == 1
+    if page_num > 1:
+        prev_html = f'<a href="{page_url(page_num - 1, from_root)}">&larr; Назад</a>'
+    else:
+        prev_html = '<span class="pagination-disabled">&larr; Назад</span>'
+    if page_num < total_pages:
+        next_html = f'<a href="{page_url(page_num + 1, from_root)}">Далее &rarr;</a>'
+    else:
+        next_html = '<span class="pagination-disabled">Далее &rarr;</span>'
+    return f'<nav class="pagination">{prev_html}{next_html}</nav>'
 
 
 def rebuild_all() -> None:
@@ -286,18 +339,28 @@ def rebuild_all() -> None:
             f.write(post_html)
         cards.append((p, article))
 
-    items = []
-    for p, article in reversed(cards):  # новые статьи сверху
-        items.append(
-            f'<li><a class="post-card-link" href="posts/{p["slug"]}.html">'
-            f'<img class="post-card-img" src="images/{p["slug"]}.jpg" alt="{html.escape(p["title"])}">'
-            f'<span class="post-card-body">'
-            f'<span class="post-card-title">{html.escape(p["title"])}</span>'
-            f'<span class="post-card-excerpt">{html.escape(excerpt(article["body_html"]))}</span>'
-            f'<span class="post-card-more">Читать далее &rarr;</span>'
-            f'</span></a></li>'
-        )
-    index_html = f"""<!doctype html>
+    ordered = list(reversed(cards))  # новые статьи сверху
+    total_pages = max(1, (len(ordered) + PAGE_SIZE - 1) // PAGE_SIZE)
+    os.makedirs(PAGES_DIR, exist_ok=True)
+
+    for page_num in range(1, total_pages + 1):
+        from_root = page_num == 1
+        prefix = "" if from_root else "../"
+        chunk = ordered[(page_num - 1) * PAGE_SIZE: page_num * PAGE_SIZE]
+
+        items = []
+        for p, article in chunk:
+            items.append(
+                f'<li><a class="post-card-link" href="{prefix}posts/{p["slug"]}.html">'
+                f'<img class="post-card-img" src="{prefix}images/{p["slug"]}.jpg" alt="{html.escape(p["title"])}">'
+                f'<span class="post-card-body">'
+                f'<span class="post-card-title">{html.escape(p["title"])}</span>'
+                f'<span class="post-card-excerpt">{html.escape(excerpt(article["body_html"]))}</span>'
+                f'<span class="post-card-more">Читать далее &rarr;</span>'
+                f'</span></a></li>'
+            )
+
+        page_html = f"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
@@ -305,23 +368,27 @@ def rebuild_all() -> None:
 <title>{html.escape(SITE_NAME)}</title>
 <meta name="description" content="Статьи о развитии речи, воспитании и психологии ребёнка от логопедического центра &quot;Сами Мамы&quot;.">
 {head_assets}
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="{prefix}style.css">
 </head>
 <body class="t-body" style="margin:0;">
 {header_html}
-<main>
+<main class="index-main">
 <ul class="post-list">
 {"".join(items)}
 </ul>
+{render_pagination(page_num, total_pages)}
 </main>
 {footer_html}
 </body>
 </html>
 """
-    with open("index.html", "w", encoding="utf-8") as f:
-        f.write(index_html)
+        target = "index.html" if from_root else f"{PAGES_DIR}/{page_num}.html"
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(page_html)
 
     urls = [f"<url><loc>{SITE_URL}/index.html</loc></url>"]
+    for page_num in range(2, total_pages + 1):
+        urls.append(f"<url><loc>{SITE_URL}/{PAGES_DIR}/{page_num}.html</loc></url>")
     for p in posts:
         urls.append(f"<url><loc>{SITE_URL}/posts/{p['slug']}.html</loc></url>")
     sitemap = (
