@@ -66,7 +66,9 @@ BLOG_REWRITE_PROMPT = """\
 ТРЕБОВАНИЯ:
 - meta_title: до 70 символов, содержит суть темы, без кликбейта ради кликбейта
 - meta_description: 150-160 символов, естественный язык, отражает пользу статьи
-- h1: цепляющий заголовок статьи (может отличаться от meta_title), заканчивается точкой/?/!
+- h1: цепляющий заголовок статьи (может отличаться от meta_title). Если он сформулирован
+  как вопрос - заканчивается "?". Если это утверждение, а не вопрос - БЕЗ знака препинания
+  в конце (не ставить точку).
 - body_html: ТОЛЬКО теги <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em> - никакого markdown.
   Структура: вводный абзац -> 3-5 секций с <h2>-подзаголовками (короче и чаще, а не один
   длинный блок) -> списки <ul><li> сразу после того подзаголовка, к которому относятся.
@@ -177,8 +179,8 @@ POST_TEMPLATE = """<!doctype html>
 <meta property="og:description" content="{meta_description}">
 <meta property="og:image" content="{image_url_abs}">
 <meta property="og:url" content="{canonical_url}">
-<link rel="stylesheet" href="../style.css">
 {head_assets}
+<link rel="stylesheet" href="../style.css">
 <script type="application/ld+json">
 {jsonld}
 </script>
@@ -201,6 +203,14 @@ POST_TEMPLATE = """<!doctype html>
 </body>
 </html>
 """
+
+
+def excerpt(body_html: str, length: int = 140) -> str:
+    text = re.sub(r"<[^>]+>", " ", body_html)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= length:
+        return text
+    return text[:length].rsplit(" ", 1)[0] + "…"
 
 
 def render_faq(faq: list) -> str:
@@ -262,6 +272,7 @@ def rebuild_all() -> None:
     footer_html = load_partial("footer.html")
 
     os.makedirs(POSTS_DIR, exist_ok=True)
+    cards = []
     for i, p in enumerate(posts):
         article = load_json(f"{POSTS_DATA_DIR}/{p['slug']}.json", None)
         if article is None:
@@ -273,12 +284,18 @@ def rebuild_all() -> None:
         post_html = render_post(article, p["slug"], prev, next_, head_assets, header_html, footer_html)
         with open(f"{POSTS_DIR}/{p['slug']}.html", "w", encoding="utf-8") as f:
             f.write(post_html)
+        cards.append((p, article))
 
     items = []
-    for p in reversed(posts):  # новые статьи сверху
+    for p, article in reversed(cards):  # новые статьи сверху
         items.append(
-            f'<li><a href="posts/{p["slug"]}.html">{html.escape(p["title"])}</a> '
-            f'<span class="post-date">{p["date"]}</span></li>'
+            f'<li><a class="post-card-link" href="posts/{p["slug"]}.html">'
+            f'<img class="post-card-img" src="images/{p["slug"]}.jpg" alt="{html.escape(p["title"])}">'
+            f'<span class="post-card-body">'
+            f'<span class="post-card-title">{html.escape(p["title"])}</span>'
+            f'<span class="post-card-excerpt">{html.escape(excerpt(article["body_html"]))}</span>'
+            f'<span class="post-card-more">Читать далее &rarr;</span>'
+            f'</span></a></li>'
         )
     index_html = f"""<!doctype html>
 <html lang="ru">
@@ -287,8 +304,8 @@ def rebuild_all() -> None:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(SITE_NAME)}</title>
 <meta name="description" content="Статьи о развитии речи, воспитании и психологии ребёнка от логопедического центра &quot;Сами Мамы&quot;.">
-<link rel="stylesheet" href="style.css">
 {head_assets}
+<link rel="stylesheet" href="style.css">
 </head>
 <body class="t-body" style="margin:0;">
 {header_html}
