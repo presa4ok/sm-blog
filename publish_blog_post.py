@@ -211,6 +211,7 @@ POST_TEMPLATE = """<!doctype html>
 </script>
 </head>
 <body class="t-body" style="margin:0;">
+<div id="allrecords" class="t-records" data-tilda-project-id="8566589" data-tilda-page-id="42951679" data-tilda-formskey="8c54f63a0172c9caf3e8edc6b8566589" data-tilda-cookie="no" data-tilda-lazy="yes" data-tilda-root-zone="com" data-tilda-project-country="RU">
 {header_html}
 <main class="post">
 <h1>{h1}</h1>
@@ -231,6 +232,7 @@ POST_TEMPLATE = """<!doctype html>
 </nav>
 </main>
 {footer_html}
+</div>
 </body>
 </html>
 """
@@ -375,6 +377,7 @@ def rebuild_all() -> None:
 <link rel="stylesheet" href="{prefix}style.css">
 </head>
 <body class="t-body" style="margin:0;">
+<div id="allrecords" class="t-records" data-tilda-project-id="8566589" data-tilda-page-id="42951679" data-tilda-formskey="8c54f63a0172c9caf3e8edc6b8566589" data-tilda-cookie="no" data-tilda-lazy="yes" data-tilda-root-zone="com" data-tilda-project-country="RU">
 {header_html}
 <main class="index-main">
 <ul class="post-list">
@@ -383,6 +386,7 @@ def rebuild_all() -> None:
 {render_pagination(page_num, total_pages)}
 </main>
 {footer_html}
+</div>
 </body>
 </html>
 """
