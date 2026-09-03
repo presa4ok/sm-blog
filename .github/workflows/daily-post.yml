@@ -23,5 +23,4 @@ jobs:
       - name: Publish next post
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          LAOZHANG_API_KEY: ${{ secrets.LAOZHANG_API_KEY }}
         run: python publish_blog_post.py

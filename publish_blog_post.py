@@ -1,92 +1,86 @@
 """
 Ежедневный автопостинг статей в блог на blog.samimami.ru (GitHub Pages).
 
-Берёт следующую нерасписанную тему из topics.json (тот же бэклог тем,
-что и у Telegram-канала @samimamiclub), генерирует ПОЛНОСТЬЮ НОВУЮ статью
-под неё (не рерайт готового текста - с нуля, чтобы структура и подача
-были самостоятельными, а не спином), генерирует картинку, рендерит
-статичную HTML-страницу с настоящими хедером/футером сайта samimami.ru
-(Zero Block, взяты как есть), обновляет index.html и sitemap.xml, коммитит.
+Источник контента - "пул" (pool/): каждый пост, ушедший в Telegram-канал
+@samimamiclub, кладётся туда же (текст + картинка) скриптами из репозитория
+SM. Telegram (post_telegram.py / bot.py) и пушится в этот репозиторий.
+
+Раз в день берём самую старую статью из pool/, просим DeepSeek переписать её
+для блога (та же тема и факты, другая структура и подача - не синонимический
+спин), картинку берём ТУ ЖЕ, что была в Telegram (не генерируем новую).
+Если пул пуст (например, в Telegram сегодня ничего не публиковали) - просто
+ничего не делаем и выходим, день пропускается.
 
 Каждый запуск перерисовывает ВСЕ посты заново из сохранённых данных в
 posts_data/ - это нужно, чтобы ссылки "предыдущая/следующая статья" у
 старых постов всегда указывали на актуальных соседей по хронологии.
 """
 
-import base64
 import html
 import json
 import os
 import re
+import shutil
 import subprocess
 from datetime import date
 
 import requests
 
 DEEPSEEK_API_KEY = os.environ["DEEPSEEK_API_KEY"]
-LAOZHANG_KEY = os.environ["LAOZHANG_API_KEY"]
 
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 DEEPSEEK_MODEL = "deepseek-chat"
-LAOZHANG_IMG_URL = "https://api.laozhang.ai/v1/images/generations"
-IMAGE_MODEL = "gemini-2.5-flash-image"
-IMAGE_SUFFIX = 'пастельные цвета, стиль иллюстрация, написано "Логоцентр Сами Мамы"'
 
 SITE_URL = "https://blog.samimami.ru"
 SITE_NAME = 'Блог логопедического центра "Сами Мамы"'
 
-TOPICS_PATH = "topics.json"
+POOL_DIR = "pool"
 STATE_PATH = "blog_state.json"
 POSTS_DIR = "posts"
 POSTS_DATA_DIR = "posts_data"
 PARTIALS_DIR = "partials"
 
-BLOG_SYSTEM_PROMPT = """\
-Ты пишешь SEO-статью для блога {site_name} на отдельном сайте (не Telegram, не Дзен).
-Эта статья ДОЛЖНА рассказывать о той же теме, что уже раскрыта в постах в Telegram-канале
-@samimamiclub, но должна быть написана заново, своими словами, с другой структурой подачи -
-как будто это отдельный автор пишет отдельную статью на ту же тему. Не пытайся угадать,
-как это было сформулировано в Telegram - пиши свою версию с нуля.
+BLOG_REWRITE_PROMPT = """\
+Вот статья, которая уже была опубликована в Telegram-канале @samimamiclub:
 
-ТЕМА: {topic}
-ОРИЕНТИР ПО СМЫСЛУ (не копировать формулировку): {title}
-АВТОР: {author}, {author_role}
+---
+{original_text}
+---
 
-ФОРМАТ ОТВЕТА - строго JSON без markdown-обёртки, одна строка не нужна, просто валидный JSON:
+Перепиши эту статью для блога {site_name} на отдельном сайте (не Telegram, не Дзен).
+Тема и факты - те же, но текст должен быть написан ЗАНОВО: другая структура подачи,
+другие подзаголовки, другие формулировки и примеры - как будто её написал другой автор
+на ту же тему, а не переставил слова местами в оригинале. Никакого синонимического
+пересказа (spin) - меняй структуру и подачу по-настоящему.
+
+ФОРМАТ ОТВЕТА - строго JSON без markdown-обёртки, просто валидный JSON:
 {{
   "meta_title": "...",
   "meta_description": "...",
   "h1": "...",
   "body_html": "...",
   "faq": [{{"q": "...", "a": "..."}}, {{"q": "...", "a": "..."}}],
-  "image_description": "..."
+  "author": "..."
 }}
 
 ТРЕБОВАНИЯ:
 - meta_title: до 70 символов, содержит суть темы, без кликбейта ради кликбейта
 - meta_description: 150-160 символов, естественный язык, отражает пользу статьи
 - h1: цепляющий заголовок статьи (может отличаться от meta_title), заканчивается точкой/?/!
-- body_html: 3500-4500 символов, ТОЛЬКО теги <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em> -
-  никакого markdown. Структура: вводный абзац -> 3-5 секций с <h2>-подзаголовками (короче
-  и чаще, 150-250 слов на секцию, а не один длинный блок) -> списки <ul><li> сразу после
-  того подзаголовка, к которому относятся. Между подзаголовком и текстом секции - обычный
-  html-поток (браузер сам даёт отступ, лишние пустые <p></p> не нужны).
+- body_html: ТОЛЬКО теги <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em> - никакого markdown.
+  Структура: вводный абзац -> 3-5 секций с <h2>-подзаголовками (короче и чаще, а не один
+  длинный блок) -> списки <ul><li> сразу после того подзаголовка, к которому относятся.
 - Тон: обращение на "ты" к маме, тепло, экспертно, без снобизма, без осуждения - тот же
-  голос, что в Telegram-версии, но текст и примеры - другие, не пересказ.
+  голос, что в оригинале, но текст и примеры - другие, не пересказ.
 - ЗНАКИ ПРЕПИНАНИЯ: только короткое тире "-", никогда "—" или "–". Только прямые кавычки
   "текст", никогда «ёлочки» и не „лапки".
-- Заканчивается коротким тёплым абзацем + подписью автора: <p><em>{author}, {author_role}
-  логопедического центра "Сами Мамы"</em></p> - БЕЗ призывов комментировать/сохранять/подписаться
-  и БЕЗ какой-либо продающей ссылки/кнопки - это просто информационная статья.
+- Заканчивается коротким тёплым абзацем + подписью автора: <p><em>Имя, должность
+  логопедического центра "Сами Мамы"</em></p> - БЕЗ призывов комментировать/сохранять/
+  подписаться и без какой-либо продающей ссылки/кнопки - это просто информационная статья.
 - faq: 2-3 вопроса-ответа по теме статьи (для расширенных сниппетов), ответ 1-2 предложения.
-- image_description: 1-2 предложения, что нарисовать (без художественного стиля, только сцена).
+- author: имя автора статьи, как в оригинале (например "Баркаева" или "Лучия Розенталь").
 - НЕ добавляй хэштеги.
 """
-
-AUTHOR_ROLES = {
-    "Баркаева": "психолог и основатель",
-    "Лучия Розенталь": "логопед-дефектолог",
-}
 
 
 def load_json(path, default):
@@ -121,32 +115,28 @@ def slugify(text: str) -> str:
     return text
 
 
-def pick_next_topic() -> dict:
-    topics = load_json(TOPICS_PATH, [])
-    state = load_json(STATE_PATH, {"posted_ids": []})
-    posted = set(state["posted_ids"])
-    for t in topics:
-        if t["id"] not in posted:
-            return t
-    raise RuntimeError("Все темы из topics.json уже опубликованы в блоге - добавьте новые")
+def pick_next_pool_item() -> dict | None:
+    if not os.path.isdir(POOL_DIR):
+        return None
+    names = sorted(f[:-5] for f in os.listdir(POOL_DIR) if f.endswith(".json"))
+    if not names:
+        return None
+    base = names[0]
+    with open(f"{POOL_DIR}/{base}.json", encoding="utf-8") as f:
+        item = json.load(f)
+    item["_base"] = base
+    return item
 
 
-def mark_posted(topic_id: int, slug: str, title: str) -> None:
-    state = load_json(STATE_PATH, {"posted_ids": [], "posts": []})
-    state["posted_ids"].append(topic_id)
-    state.setdefault("posts", []).append({
-        "id": topic_id, "slug": slug, "title": title, "date": date.today().isoformat(),
-    })
-    save_json(STATE_PATH, state)
+def consume_pool_item(base: str) -> None:
+    os.remove(f"{POOL_DIR}/{base}.json")
+    img_path = f"{POOL_DIR}/{base}.jpg"
+    if os.path.exists(img_path):
+        os.remove(img_path)
 
 
-def generate_article(topic: dict) -> dict:
-    author = topic.get("author", "Баркаева")
-    role = AUTHOR_ROLES.get(author, "специалист")
-    prompt = BLOG_SYSTEM_PROMPT.format(
-        site_name=SITE_NAME, topic=topic["topic"], title=topic["title"],
-        author=author, author_role=role,
-    )
+def rewrite_article(pool_item: dict) -> dict:
+    prompt = BLOG_REWRITE_PROMPT.format(original_text=pool_item["text"], site_name=SITE_NAME)
     r = requests.post(
         DEEPSEEK_URL,
         headers={
@@ -166,19 +156,12 @@ def generate_article(topic: dict) -> dict:
     return json.loads(text)
 
 
-def generate_image(description: str) -> bytes:
-    prompt = f"{description}, {IMAGE_SUFFIX}"
-    r = requests.post(
-        LAOZHANG_IMG_URL,
-        headers={"Authorization": f"Bearer {LAOZHANG_KEY}", "Content-Type": "application/json"},
-        json={"model": IMAGE_MODEL, "prompt": prompt, "n": 1, "size": "1024x1024"},
-        timeout=120,
-    )
-    r.raise_for_status()
-    item = r.json()["data"][0]
-    if "b64_json" in item:
-        return base64.b64decode(item["b64_json"])
-    return requests.get(item["url"], timeout=30).content
+def mark_posted(slug: str, title: str) -> None:
+    state = load_json(STATE_PATH, {"posts": []})
+    state.setdefault("posts", []).append({
+        "slug": slug, "title": title, "date": date.today().isoformat(),
+    })
+    save_json(STATE_PATH, state)
 
 
 POST_TEMPLATE = """<!doctype html>
@@ -291,9 +274,8 @@ def rebuild_all() -> None:
         with open(f"{POSTS_DIR}/{p['slug']}.html", "w", encoding="utf-8") as f:
             f.write(post_html)
 
-    # index - новые статьи сверху
     items = []
-    for p in reversed(posts):
+    for p in reversed(posts):  # новые статьи сверху
         items.append(
             f'<li><a href="posts/{p["slug"]}.html">{html.escape(p["title"])}</a> '
             f'<span class="post-date">{p["date"]}</span></li>'
@@ -335,30 +317,30 @@ def rebuild_all() -> None:
 
 
 def main():
-    topic = pick_next_topic()
-    print(f"Тема #{topic['id']}: {topic['topic']} - {topic['title']}")
+    pool_item = pick_next_pool_item()
+    if pool_item is None:
+        print("Пул пуст - сегодня в блоге ничего не публикуем.")
+        return
 
-    article = generate_article(topic)
-    article["author"] = topic.get("author", "Баркаева")
+    print(f"Беру из пула: {pool_item['topic']}")
+    article = rewrite_article(pool_item)
     article["date"] = date.today().isoformat()
-    slug = f"{topic['id']:03d}-{slugify(article['h1'][:60])}"
+    slug = f"{date.today().isoformat()}-{slugify(article['h1'][:60])}"
 
-    print("Генерирую картинку...")
-    img_bytes = generate_image(article["image_description"])
     os.makedirs("images", exist_ok=True)
-    with open(f"images/{slug}.jpg", "wb") as f:
-        f.write(img_bytes)
+    shutil.copyfile(f"{POOL_DIR}/{pool_item['_base']}.jpg", f"images/{slug}.jpg")
 
     os.makedirs(POSTS_DATA_DIR, exist_ok=True)
     save_json(f"{POSTS_DATA_DIR}/{slug}.json", article)
 
-    mark_posted(topic["id"], slug, article["h1"])
+    mark_posted(slug, article["h1"])
+    consume_pool_item(pool_item["_base"])
     rebuild_all()
 
     subprocess.run(["git", "config", "user.name", "sm-blog-bot"], check=True)
     subprocess.run(["git", "config", "user.email", "actions@users.noreply.github.com"], check=True)
     subprocess.run(["git", "add", "-A"], check=True)
-    subprocess.run(["git", "commit", "-m", f"Пост #{topic['id']}: {article['h1']}"], check=True)
+    subprocess.run(["git", "commit", "-m", f"Пост: {article['h1']}"], check=True)
     subprocess.run(["git", "push"], check=True)
     print(f"Опубликовано: posts/{slug}.html")
 

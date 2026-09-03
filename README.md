@@ -1,9 +1,9 @@
 # SM. Blog
 
 Автопостинг статей в блог на `blog.samimami.ru`, отдельно от Telegram-канала
-@samimamiclub. Пишется на ту же тему, что и уже опубликованные посты в Telegram
-(бэклог тем в `topics.json`), но каждый раз новым, самостоятельным текстом - не рерайтом
-готового поста - чтобы не плодить дубли для Яндекса/Дзена.
+@samimamiclub. Не генерирует темы сам - берёт уже готовые посты из Telegram
+(через "пул", см. ниже) и переписывает каждый заново другим текстом и структурой,
+чтобы не плодить дубли для Яндекса/Дзена.
 
 Хедер и футер каждой страницы блога - это настоящий Zero Block хедер/футер с
 samimami.ru (взят как есть из `partials/header.html` и `partials/footer.html`,
@@ -12,31 +12,47 @@ samimami.ru (взят как есть из `partials/header.html` и `partials/f
 
 ## Как это работает
 
-1. GitHub Actions по расписанию (`.github/workflows/daily-post.yml`, ежедневно) запускает
-   `publish_blog_post.py`.
-2. Скрипт берёт следующую неопубликованную тему из `topics.json` (сверяется с
-   `blog_state.json`), генерирует статью через DeepSeek API, картинку - через laozhang.ai.
-3. Сохраняет структуру статьи в `posts_data/<slug>.json` и **перерисовывает все посты**
-   из `posts_data/` заново (`posts/<slug>.html`, `index.html`, `sitemap.xml`) - это нужно,
-   чтобы у соседних по хронологии постов всегда были правильные ссылки
+1. Когда в репозитории `SM. Telegram` публикуется пост (через `post_telegram.py`
+   или `bot.py`), он ОДНОВРЕМЕННО кладётся в `pool/` этого репозитория (текст +
+   картинка) и пушится сюда - это единственный канал передачи данных с локальной
+   машины, на которой пишутся посты, в облако, где крутится расписание.
+2. GitHub Actions по расписанию (`.github/workflows/daily-post.yml`, ежедневно)
+   запускает `publish_blog_post.py`.
+3. Скрипт берёт САМЫЙ СТАРЫЙ файл из `pool/`. Если пул пуст (в Telegram сегодня
+   ничего не публиковали) - скрипт просто завершается, день пропускается.
+4. Если статья есть - просит DeepSeek переписать её для блога (та же тема, другая
+   структура и подача - не синонимический спин), картинку берёт ТУ ЖЕ, что была
+   в Telegram (не генерирует новую).
+5. Сохраняет статью в `posts_data/<slug>.json` и **перерисовывает все посты**
+   из `posts_data/` заново (`posts/<slug>.html`, `index.html`, `sitemap.xml`) -
+   это нужно, чтобы у соседних по хронологии постов всегда были правильные ссылки
    "предыдущая/следующая статья".
-4. Коммитит и пушит - GitHub Pages публикует новую версию сайта.
+6. Удаляет использованный файл из `pool/`, коммитит и пушит - GitHub Pages
+   публикует новую версию сайта.
 
 ## Настройка перед первым запуском
 
 1. В настройках репозитория на GitHub:
-   - Settings → Secrets and variables → Actions: добавить `DEEPSEEK_API_KEY`, `LAOZHANG_API_KEY`
+   - Settings → Secrets and variables → Actions: добавить `DEEPSEEK_API_KEY`
      (уже сделано для `presa4ok/sm-blog`)
-   - Settings → Pages: Custom domain = `blog.samimami.ru` (GitHub создаст файл `CNAME`)
+   - Settings → Pages: Custom domain = `blog.samimami.ru` (уже настроено, файл
+     `CNAME` создан GitHub автоматически)
 2. В DNS домена `samimami.ru` добавить CNAME-запись: `blog` → `presa4ok.github.io`
+   (сделано)
 3. На сайте на Тильде (необязательно, но полезно для трафика) добавить блок/баннер
    со ссылкой на `blog.samimami.ru`
 
-## Темы
+## Пул (`pool/`)
 
-`topics.json` изначально засеян из `PUBLISHED_ARTICLES.md` проекта `SM. Telegram`
-(74 темы). Чтобы добавить новые темы для блога - просто дописать объекты
-`{"id": N, "topic": "...", "title": "...", "author": "..."}` в конец файла.
+Каждый файл - пара `<slug>.json` + `<slug>.jpg`:
+
+```json
+{"topic": "заголовок или тема поста", "text": "полный HTML-текст поста как в Telegram", "created": "2026-09-03"}
+```
+
+Кладётся сюда автоматически из репозитория `SM. Telegram` (см. `push_to_blog_pool`
+в `post_telegram.py` и `bot.py` того репозитория). Руками добавлять не нужно, но
+можно - формат простой.
 
 ## Обновление хедера/футера
 
@@ -50,7 +66,6 @@ samimami.ru (взят как есть из `partials/header.html` и `partials/f
 
 ```bash
 export DEEPSEEK_API_KEY=...
-export LAOZHANG_API_KEY=...
 pip install -r requirements.txt
 python publish_blog_post.py
 ```
