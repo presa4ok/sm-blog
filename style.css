@@ -49,11 +49,14 @@ main.index-main {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  max-width: 100%;
 }
 
 .post-nav-side {
   flex: 1;
+  min-width: 0;
   font-size: 0.9rem;
+  overflow-wrap: break-word;
 }
 
 .post-nav-side:last-child {
@@ -150,6 +153,27 @@ main.index-main {
 
 @media (max-width: 560px) {
   .post-list { grid-template-columns: 1fr; }
+
+  .post-nav {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .post-nav-side,
+  .post-nav-side:last-child {
+    flex: none;
+    width: 100%;
+    text-align: left;
+  }
+
+  .post-nav-home {
+    order: -1;
+    flex-wrap: wrap;
+    white-space: normal;
+    justify-content: center;
+    text-align: center;
+  }
 }
 
 .pagination {
