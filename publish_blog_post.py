@@ -16,6 +16,7 @@ posts_data/ - это нужно, чтобы ссылки "предыдущая/�
 старых постов всегда указывали на актуальных соседей по хронологии.
 """
 
+import hashlib
 import html
 import json
 import os
@@ -120,6 +121,15 @@ def load_partial(name: str) -> str:
         return f.read()
 
 
+def style_version() -> str:
+    """Хэш содержимого style.css для cache-buster'а в ссылке на стиль - без
+    него браузеры кэшируют style.css на весь max-age (10 минут) или дольше по
+    своей эвристике, и после правок стилей люди какое-то время видят старую
+    версию, даже если HTML уже обновился."""
+    with open("style.css", "rb") as f:
+        return hashlib.md5(f.read()).hexdigest()[:8]
+
+
 def slugify(text: str) -> str:
     translit = {
         "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
@@ -209,7 +219,7 @@ POST_TEMPLATE = """<!doctype html>
 <meta property="og:image" content="{image_url_abs}">
 <meta property="og:url" content="{canonical_url}">
 {head_assets}
-<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../style.css?v={style_v}">
 <script type="application/ld+json">
 {jsonld}
 </script>
@@ -342,6 +352,7 @@ def render_post(article: dict, slug: str, prev: dict | None, next_: dict | None,
     signature = f'{author}, {author_role(author)} логопедического центра "Сами Мамы"'
 
     return POST_TEMPLATE.format(
+        style_v=style_version(),
         meta_title=html.escape(article["meta_title"]),
         meta_description=html.escape(article["meta_description"]),
         canonical_url=canonical_url,
@@ -392,6 +403,7 @@ def rebuild_all() -> None:
     head_assets = load_partial("head_assets.html")
     header_html = load_partial("header.html")
     footer_html = load_partial("footer.html")
+    style_v = style_version()
 
     os.makedirs(POSTS_DIR, exist_ok=True)
 
@@ -464,7 +476,7 @@ def rebuild_all() -> None:
 <meta name="description" content="{page_description}">
 <link rel="canonical" href="{SITE_URL}/{'index.html' if from_root else f'{PAGES_DIR}/{page_num}.html'}">
 {head_assets}
-<link rel="stylesheet" href="{prefix}style.css">
+<link rel="stylesheet" href="{prefix}style.css?v={style_v}">
 </head>
 <body class="t-body" style="margin:0;">
 <div id="allrecords" class="t-records" data-tilda-project-id="8566589" data-tilda-page-id="42951679" data-tilda-formskey="8c54f63a0172c9caf3e8edc6b8566589" data-tilda-cookie="no" data-tilda-lazy="yes" data-tilda-root-zone="com" data-tilda-project-country="RU">
