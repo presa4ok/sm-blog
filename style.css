@@ -100,7 +100,7 @@ main.index-main {
    причине, что и у .post h1 (см. комментарий выше): иначе сброс отступов из
    Tilda-бандла перебивает style.css. */
 .index-main .index-h1 { font-size: 1.6rem; line-height: 1.3; margin: 0 0 12px; }
-.index-main .index-intro { color: var(--muted); margin: 0 0 24px; max-width: 680px; }
+.index-main .index-intro { color: var(--muted); margin: 0 0 24px; }
 
 /* Список статей на главной блога - плитка по 2 в ряд: картинка сверху,
    заголовок, отрывок текста и "читать далее". */
