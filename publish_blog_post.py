@@ -221,6 +221,7 @@ POST_TEMPLATE = """<!doctype html>
 {speech_cta_html}
 {faq_html}
 <p class="post-signature"><em>{signature}</em></p>
+{related_html}
 <nav class="post-nav">
 <span class="post-nav-side">{prev_link}</span>
 <span class="post-nav-home">
@@ -246,6 +247,62 @@ def excerpt(body_html: str, length: int = 140) -> str:
     return text[:length].rsplit(" ", 1)[0] + "…"
 
 
+# Грубая тематическая разметка по ключевым словам - нужна только для того,
+# чтобы подбирать 2-3 "Похожие статьи" в конце поста (внутренняя перелинковка
+# помимо навигации предыдущая/следующая). Каждый новый пост размечается этим
+# же способом автоматически, руками ничего поддерживать не нужно.
+TOPIC_KEYWORDS = {
+    "rech": ["заикан", "речь", "речи", "слог", "звук", "логопед", "произнош",
+             "дефектолог", "билингв", "английск", "пересказ", "шепел"],
+    "trevoga": ["тревог", "ритуал", "страш", "боит", "паник", "экотревог"],
+    "samootsenka": ["самооцен", "завид", "хвал", "похвал", "перфекцион", "рвёт рисунок",
+                     "рвет рисунок", "рисунок", "внешност"],
+    "granitsy": ["бабушк", "няня", "нянь", "границ"],
+    "sad_shkola": ["сад", "школ", "травл", "адаптац", "простуд"],
+}
+
+
+# Минимум упоминаний темы в тексте, чтобы её засчитать - иначе одно случайное
+# слово (например "школа" мельком в статье не про сад/школу) создавало бы
+# мусорные совпадения между совсем не связанными статьями.
+TOPIC_MIN_STRENGTH = 5
+
+
+def topic_strengths(article: dict) -> dict[str, int]:
+    text = (article.get("h1", "") + " " + re.sub(r"<[^>]+>", " ", article.get("body_html", ""))).lower()
+    return {topic: sum(text.count(kw) for kw in keywords) for topic, keywords in TOPIC_KEYWORDS.items()}
+
+
+def topics_for(article: dict) -> dict[str, int]:
+    return {t: s for t, s in topic_strengths(article).items() if s >= TOPIC_MIN_STRENGTH}
+
+
+def pick_related(slug: str, posts: list[dict], topics_by_slug: dict[str, dict[str, int]],
+                  limit: int = 3) -> list[dict]:
+    own_topics = topics_by_slug.get(slug, {})
+    if not own_topics:
+        return []
+    scored = []
+    for p in posts:
+        if p["slug"] == slug:
+            continue
+        other_topics = topics_by_slug.get(p["slug"], {})
+        overlap = sum(min(strength, other_topics[t]) for t, strength in own_topics.items() if t in other_topics)
+        if overlap:
+            scored.append((overlap, p))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [p for _, p in scored[:limit]]
+
+
+def render_related(related: list[dict]) -> str:
+    if not related:
+        return ""
+    items = "".join(
+        f'<li><a href="{p["slug"]}.html">{html.escape(p["title"])}</a></li>' for p in related
+    )
+    return f'<section class="related-posts"><h2>Похожие статьи</h2><ul>{items}</ul></section>'
+
+
 def render_faq(faq: list) -> str:
     if not faq:
         return ""
@@ -254,7 +311,8 @@ def render_faq(faq: list) -> str:
 
 
 def render_post(article: dict, slug: str, prev: dict | None, next_: dict | None,
-                 head_assets: str, header_html: str, footer_html: str) -> str:
+                 head_assets: str, header_html: str, footer_html: str,
+                 related: list[dict] | None = None) -> str:
     canonical_url = f"{SITE_URL}/posts/{slug}.html"
     image_url_rel = f"../images/{slug}.jpg"
     image_url_abs = f"{SITE_URL}/images/{slug}.jpg"
@@ -291,6 +349,7 @@ def render_post(article: dict, slug: str, prev: dict | None, next_: dict | None,
         speech_cta_html=SPEECH_CTA_HTML if (is_speech_author(author) or article.get("about_speech")) else "",
         faq_html=render_faq(article.get("faq", [])),
         signature=html.escape(signature),
+        related_html=render_related(related or []),
         jsonld=jsonld,
         head_assets=head_assets,
         header_html=header_html,
@@ -331,16 +390,25 @@ def rebuild_all() -> None:
     footer_html = load_partial("footer.html")
 
     os.makedirs(POSTS_DIR, exist_ok=True)
+
+    articles_by_slug = {}
+    for p in posts:
+        article = load_json(f"{POSTS_DATA_DIR}/{p['slug']}.json", None)
+        if article is not None:
+            articles_by_slug[p["slug"]] = article
+    topics_by_slug = {slug: topics_for(a) for slug, a in articles_by_slug.items()}
+
     cards = []
     for i, p in enumerate(posts):
-        article = load_json(f"{POSTS_DATA_DIR}/{p['slug']}.json", None)
+        article = articles_by_slug.get(p["slug"])
         if article is None:
             continue
         prev_p = posts[i - 1] if i > 0 else None
         next_p = posts[i + 1] if i + 1 < len(posts) else None
         prev = {"slug": prev_p["slug"], "title": prev_p["title"]} if prev_p else None
         next_ = {"slug": next_p["slug"], "title": next_p["title"]} if next_p else None
-        post_html = render_post(article, p["slug"], prev, next_, head_assets, header_html, footer_html)
+        related = pick_related(p["slug"], posts, topics_by_slug)
+        post_html = render_post(article, p["slug"], prev, next_, head_assets, header_html, footer_html, related)
         with open(f"{POSTS_DIR}/{p['slug']}.html", "w", encoding="utf-8") as f:
             f.write(post_html)
         cards.append((p, article))
@@ -366,13 +434,30 @@ def rebuild_all() -> None:
                 f'</span></a></li>'
             )
 
+        page_suffix = "" if from_root else f" — страница {page_num}"
+        page_title = html.escape(SITE_NAME + page_suffix)
+        page_description = (
+            "Статьи о развитии речи, воспитании и психологии ребёнка от логопедического "
+            "центра &quot;Сами Мамы&quot;: заикание, задержка речи, билингвизм, подготовка "
+            "к школе и повседневные вопросы, с которыми сталкиваются родители."
+            + (f" Страница {page_num}." if not from_root else "")
+        )
+        intro_html = (
+            '<h1 class="index-h1">Блог логопедического центра "Сами Мамы"</h1>\n'
+            '<p class="index-intro">Разбираем на конкретных примерах, как помочь ребёнку '
+            "с речью и не наделать ошибок в воспитании: заикание, задержка речи, билингвизм, "
+            "капризы, адаптация в саду и школе. Пишут логопед-дефектолог и психолог центра."
+            "</p>"
+            if from_root
+            else f'<h1 class="index-h1">Блог логопедического центра "Сами Мамы" — страница {page_num}</h1>'
+        )
         page_html = f"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(SITE_NAME)}</title>
-<meta name="description" content="Статьи о развитии речи, воспитании и психологии ребёнка от логопедического центра &quot;Сами Мамы&quot;.">
+<title>{page_title}</title>
+<meta name="description" content="{page_description}">
 <link rel="canonical" href="{SITE_URL}/{'index.html' if from_root else f'{PAGES_DIR}/{page_num}.html'}">
 {head_assets}
 <link rel="stylesheet" href="{prefix}style.css">
@@ -381,6 +466,7 @@ def rebuild_all() -> None:
 <div id="allrecords" class="t-records" data-tilda-project-id="8566589" data-tilda-page-id="42951679" data-tilda-formskey="8c54f63a0172c9caf3e8edc6b8566589" data-tilda-cookie="no" data-tilda-lazy="yes" data-tilda-root-zone="com" data-tilda-project-country="RU">
 {header_html}
 <main class="index-main">
+{intro_html}
 <ul class="post-list">
 {"".join(items)}
 </ul>
