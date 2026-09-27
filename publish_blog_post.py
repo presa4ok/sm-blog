@@ -373,6 +373,7 @@ def rebuild_all() -> None:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(SITE_NAME)}</title>
 <meta name="description" content="Статьи о развитии речи, воспитании и психологии ребёнка от логопедического центра &quot;Сами Мамы&quot;.">
+<link rel="canonical" href="{SITE_URL}/{'index.html' if from_root else f'{PAGES_DIR}/{page_num}.html'}">
 {head_assets}
 <link rel="stylesheet" href="{prefix}style.css">
 </head>
