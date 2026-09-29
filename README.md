@@ -10,6 +10,16 @@ samimami.ru (взят как есть из `partials/header.html` и `partials/f
 внутренние ссылки переписаны на абсолютные `https://samimami.ru/...`), чтобы блог
 визуально не отличался от основного сайта.
 
+> **С 29.09.2026 блог живёт на Selectel, а не на GitHub.** Рабочая копия —
+> `/opt/sm-blog` на samimami-vps (135.106.183.253), nginx раздаёт её как
+> blog.samimami.ru, статью в 09:00 МСК выпускает cron → `/usr/local/bin/sm-blog-publish`
+> (лог `/var/log/sm-blog.log`, ключ DeepSeek — `/opt/sm-blog/.env`).
+> GitHub Actions выключен, GitHub — только зеркало: сервер пушит туда после
+> каждой статьи, и если GitHub недоступен, сайт и публикации это не задевают.
+> На маке `origin` этого репозитория = `samimami-vps:/opt/sm-blog` (пул из
+> SM. Telegram уходит туда), `github` — зеркало. Ниже — описание старой схемы;
+> шаги 2 и 6 теперь выполняются на Selectel.
+
 ## Как это работает
 
 1. Когда в репозитории `SM. Telegram` публикуется пост (через `post_telegram.py`
