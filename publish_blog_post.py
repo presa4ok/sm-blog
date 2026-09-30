@@ -205,6 +205,47 @@ def mark_posted(slug: str, title: str) -> None:
     save_json(STATE_PATH, state)
 
 
+SHARE_ICONS = {
+    "vk": '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12.8 17.2c-5.6 0-8.8-3.8-8.9-10.2h2.8c.1 4.7 2.2 6.6 3.8 7V7h2.6v4c1.6-.2 3.3-2 3.9-4h2.6c-.4 2.5-2.2 4.3-3.4 5 1.2.6 3.3 2.2 4.1 5.2h-2.9c-.6-1.9-2.1-3.3-4.1-3.5v3.5h-.5Z"/></svg>',
+    "telegram": '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M21.5 4.5 3 11.6c-1.1.4-1.1 1.6.1 1.9l4.6 1.4 1.8 5.6c.2.7 1.1.9 1.6.3l2.5-2.8 4.7 3.5c.8.6 1.9.2 2.1-.8l3.2-14.8c.3-1.2-.8-2-1.7-1.6ZM8.6 14.4l9-5.7c.3-.2.6.1.3.4l-7.3 6.7-.3 3.1-1.4-4.5Z"/></svg>',
+    "max": '<i class="max-ico" aria-hidden="true"></i>',
+    "ok": '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0-7.2a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4ZM7.6 13.2c-.6.4-.7 1.2-.3 1.7.3.5 1.1.8 2.1 1.1l-2.2 2.2c-.5.5-.5 1.2 0 1.7.5.4 1.2.4 1.7 0L12 17.6l3.1 3.1c.5.4 1.2.4 1.7 0 .5-.5.5-1.2 0-1.7l-2.2-2.2c1-.3 1.8-.6 2.1-1.1.4-.5.3-1.3-.3-1.7-.5-.3-1.3-.2-1.9.2-1 .6-2.3.6-3.4 0-.6-.4-1.4-.5-1.9-.2Z"/></svg>',
+    "whatsapp": '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 3a9 9 0 0 0-7.7 13.6L3 21l4.5-1.2A9 9 0 1 0 12 3Zm4.6 12.3c-.2.6-1.1 1.1-1.6 1.1-.4.1-.9.1-2.9-.7-2.4-1-4-3.4-4.1-3.6-.1-.2-1-1.3-1-2.5s.6-1.8.9-2c.2-.2.4-.3.6-.3h.4c.1 0 .3 0 .4.3l.6 1.5c.1.1.1.3 0 .4l-.3.4-.3.3c-.1.1-.2.3-.1.5.4.7 1 1.3 1.6 1.7.6.5 1.2.7 1.4.8.2.1.3.1.4-.1l.6-.7c.2-.2.3-.2.5-.1l1.4.7c.2.1.3.2.3.3.1.2.1.6-.1 1.1Z"/></svg>',
+    "copy": '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/></svg>',
+}
+
+
+def render_share(url: str, title: str) -> str:
+    """Блок «Поделиться»: ВК, Telegram, MAX, ОД, WhatsApp, копирование ссылки."""
+    from urllib.parse import quote
+    u, t = quote(url, safe=""), quote(title, safe="")
+    both = quote(f"{title} {url}", safe="")
+    links = [
+        ("vk", "ВК", f"https://vk.com/share.php?url={u}&title={t}"),
+        ("telegram", "Telegram", f"https://t.me/share/url?url={u}&text={t}"),
+        ("max", "MAX", f"https://max.ru/:share?text={both}"),
+        ("ok", "ОД", f"https://connect.ok.ru/offer?url={u}&title={t}"),
+        ("whatsapp", "WhatsApp", f"https://wa.me/?text={both}"),
+    ]
+    items = "".join(
+        f'<a class="share-btn" href="{html.escape(href)}" target="_blank" rel="noopener nofollow" '
+        f'aria-label="Поделиться: {name}">{SHARE_ICONS[key]}<span>{name}</span></a>'
+        for key, name, href in links
+    )
+    copy = (f'<button type="button" class="share-btn" data-copy="{html.escape(url)}" '
+            f'aria-label="Скопировать ссылку">{SHARE_ICONS["copy"]}<span>Ссылка</span></button>')
+    script = ("<script>document.querySelectorAll('[data-copy]').forEach(function(b){b.addEventListener('click',function(){"
+              "var u=b.getAttribute('data-copy'),s=b.querySelector('span'),o=s.textContent;"
+              "function ok(){s.textContent='Готово';b.classList.add('done');"
+              "setTimeout(function(){s.textContent=o;b.classList.remove('done');},2200);}"
+              "if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u).then(ok,fb);}else{fb();}"
+              "function fb(){var t=document.createElement('textarea');t.value=u;t.style.position='fixed';t.style.opacity='0';"
+              "document.body.appendChild(t);t.select();try{document.execCommand('copy');ok();}catch(e){}document.body.removeChild(t);}"
+              "});});</script>")
+    return (f'<div class="share"><div class="share-title">Поделиться статьёй</div>'
+            f'<div class="share-row">{items}{copy}</div></div>{script}')
+
+
 POST_TEMPLATE = """<!doctype html>
 <html lang="ru">
 <head>
@@ -235,6 +276,7 @@ POST_TEMPLATE = """<!doctype html>
 {speech_cta_html}
 {faq_html}
 <p class="post-signature"><em>{signature}</em></p>
+{share_html}
 {related_html}
 <nav class="post-nav">
 <span class="post-nav-side">{prev_link}</span>
@@ -365,6 +407,7 @@ def render_post(article: dict, slug: str, prev: dict | None, next_: dict | None,
         faq_html=render_faq(article.get("faq", [])),
         signature=html.escape(signature),
         related_html=render_related(related or []),
+        share_html=render_share(canonical_url, article["h1"]),
         jsonld=jsonld,
         head_assets=head_assets,
         header_html=header_html,
