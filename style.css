@@ -21,7 +21,7 @@ body {
 main {
   max-width: 720px;
   margin: 0 auto;
-  padding: 130px 20px 60px;
+  padding: 40px 20px 60px;
 }
 
 main.index-main {
@@ -243,3 +243,8 @@ main.index-main {
   .post .share-btn { flex: 1 1 0; min-width: 0; padding: 11px 0; }
   .post .share-btn span { display: none; }
 }
+
+/* заголовки в цветах сайта samimami.ru (общий site.css красит h1 белым) */
+.post h1, .index-h1 { color: #9a51ab; font-family: "Fregat", "Mulish", sans-serif; font-weight: 400; }
+.post h2, .post h3 { color: #111; font-family: "Mulish", sans-serif; font-weight: 700; }
+.post a, main a { text-underline-offset: 3px; }

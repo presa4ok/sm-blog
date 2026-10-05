@@ -246,6 +246,46 @@ def render_share(url: str, title: str) -> str:
             f'<div class="share-row">{items}{copy}</div></div>{script}')
 
 
+METRIKA_HTML = r"""<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();
+        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+    })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=113442658', 'ym');
+
+    ym(113442658, 'init', {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+    document.addEventListener('click', function (ev) {
+        var a = ev.target.closest && ev.target.closest('a[href],button[data-copy]');
+        if (!a) return;
+        var h = a.getAttribute('href') || '';
+        if (a.hasAttribute('data-copy')) ym(113442658, 'reachGoal', 'share_click', {network: 'copy'});
+        else if (a.classList.contains('share-btn')) ym(113442658, 'reachGoal', 'share_click', {network: (a.getAttribute('aria-label') || '').replace('Поделиться: ', '')});
+        else if (/^tel:/i.test(h)) ym(113442658, 'reachGoal', 'phone_click');
+        else if (/^https?:\/\/(www\.)?samimami\.ru/i.test(h)) ym(113442658, 'reachGoal', 'site_click');
+    }, true);
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/113442658" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+<!-- cookie-notice -->
+<script>
+(function () {
+    try { if (localStorage.getItem('ck_ok')) return; } catch (e) {}
+    function show() {
+        var d = document.createElement('div');
+        d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Файлы cookie');
+        d.style.cssText = 'position:fixed;left:16px;right:16px;bottom:16px;max-width:560px;margin:0 auto;z-index:99999;background:#2B1D33;color:#fff;border-radius:16px;padding:16px 18px;box-shadow:0 12px 36px rgba(0,0,0,.28);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;gap:14px;align-items:center;flex-wrap:wrap';
+        d.innerHTML = '<span style="flex:1 1 260px">Мы используем файлы cookie и Яндекс Метрику, чтобы сайт работал лучше. Продолжая пользоваться сайтом, вы соглашаетесь с этим. <a href="https://samimami.ru/conf" style="color:#E2C6EC;text-decoration:underline">Подробнее</a></span><button type="button" style="flex:none;border:0;border-radius:999px;background:#9A51AB;color:#fff;font:inherit;font-weight:700;padding:10px 22px;cursor:pointer">Понятно</button>';
+        d.querySelector('button').onclick = function () { try { localStorage.setItem('ck_ok', '1'); } catch (e) {} d.remove(); };
+        document.body.appendChild(d);
+    }
+    if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+})();
+</script>
+<!-- /cookie-notice -->
+"""
+
+
 POST_TEMPLATE = """<!doctype html>
 <html lang="ru">
 <head>
@@ -443,7 +483,7 @@ def rebuild_all() -> None:
     state = load_json(STATE_PATH, {"posts": []})
     posts = state.get("posts", [])  # хронологический порядок публикации
 
-    head_assets = load_partial("head_assets.html")
+    head_assets = load_partial("head_assets.html") + METRIKA_HTML
     header_html = load_partial("header.html")
     footer_html = load_partial("footer.html")
     style_v = style_version()
@@ -554,6 +594,21 @@ def rebuild_all() -> None:
         f.write(sitemap)
 
 
+INDEXNOW_KEY = "bf333b0558fc09f68c35f37f17a34668"
+
+
+def indexnow(urls: list[str]) -> None:
+    """Сообщить Яндексу и Bing (протокол IndexNow) о новых/изменённых страницах, чтобы они переобошли их сразу.
+    Сбой не критичен: статья уже опубликована."""
+    try:
+        for endpoint in ("https://yandex.com/indexnow", "https://api.indexnow.org/indexnow"):
+            r = requests.post(endpoint, json={"host": "blog.samimami.ru", "key": INDEXNOW_KEY,
+                              "keyLocation": f"{SITE_URL}/{INDEXNOW_KEY}.txt", "urlList": urls}, timeout=20)
+            print(f"IndexNow {endpoint}: {r.status_code}")
+    except Exception as e:  # noqa: BLE001
+        print(f"IndexNow не отправлен: {e}")
+
+
 def main():
     pool_item = pick_next_pool_item()
     if pool_item is None:
@@ -574,6 +629,7 @@ def main():
     mark_posted(slug, article["h1"])
     consume_pool_item(pool_item["_base"])
     rebuild_all()
+    indexnow([f"{SITE_URL}/posts/{slug}.html", f"{SITE_URL}/index.html", f"{SITE_URL}/sitemap.xml"])
 
     subprocess.run(["git", "config", "user.name", "sm-blog-bot"], check=True)
     subprocess.run(["git", "config", "user.email", "actions@users.noreply.github.com"], check=True)
